@@ -1,4 +1,4 @@
-module zhelper
+module github.com/zulfirman/supa-city-helper-go
 
 go 1.19
 
