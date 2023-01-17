@@ -2,7 +2,9 @@ package zhelper
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/xid"
@@ -12,7 +14,16 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+)
+
+var (
+	poolReq = &sync.Pool{
+		New: func() interface{} {
+			return resty.New()
+		},
+	}
 )
 
 func Rs(c echo.Context, Ct map[string]interface{}) error {
@@ -76,10 +87,35 @@ func ReadyBodyJson(c echo.Context, json map[string]interface{}) map[string]inter
 }
 
 func GetReq(Url string, token string) (*resty.Response, error) {
-	client := resty.New()
+	client := poolReq.Get().(*resty.Client)
+	defer poolReq.Put(client)
 	resp, err := client.R().EnableTrace().SetAuthToken(token).Get(Url)
 	if err != nil {
 		fmt.Println(err)
+	}
+	code := resp.StatusCode()
+	if code != 200 {
+		fmt.Println(resp.String())
+		err = errors.New("response code is " + string(code))
+	}
+	return resp, err
+}
+
+func PostReq(Url string, token string, body interface{}) (*resty.Response, error) {
+	client := poolReq.Get().(*resty.Client)
+	defer poolReq.Put(client)
+	resp, err := client.R().EnableTrace().
+		SetAuthToken(token).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post(Url)
+	if err != nil {
+		fmt.Println(err)
+	}
+	code := resp.StatusCode()
+	if code != 200 {
+		fmt.Println(resp.String())
+		err = errors.New("response code is " + string(code))
 	}
 	return resp, err
 }
@@ -102,18 +138,27 @@ func MarshalBinary(i interface{}) (data []byte) { //bytes to json string
 }
 
 func RemoveField(obj interface{}, ignoreFields ...string) (interface{}, error) {
-	toJson, err := json.Marshal(obj)
+	// Marshal the object to JSON.
+	toJson, err := sonic.Marshal(obj)
 	if err != nil {
 		return obj, err
 	}
+
+	// If no fields are specified, return the object as is.
 	if len(ignoreFields) == 0 {
 		return obj, nil
 	}
+
+	// Unmarshal the JSON to a map.
 	toMap := map[string]interface{}{}
-	json.Unmarshal(toJson, &toMap)
+	sonic.Unmarshal(toJson, &toMap)
+
+	// Remove the specified fields from the map.
 	for _, field := range ignoreFields {
 		delete(toMap, field)
 	}
+
+	// Return the modified map.
 	return toMap, nil
 }
 
@@ -131,6 +176,54 @@ func Substr(input string, limit int) string {
 		input = input[0:limit]
 	}
 	return input
+}
+
+func ArrUniqueStr(strSlice []string) []string {
+	// Use a map to track the unique elements.
+	uniqueMap := make(map[string]bool)
+	for _, item := range strSlice {
+		if item == "" {
+			// Skip empty strings.
+			continue
+		}
+		uniqueMap[item] = true
+	}
+	// Convert the map keys to a slice.
+	uniqueSlice := make([]string, 0, len(uniqueMap))
+	for key := range uniqueMap {
+		uniqueSlice = append(uniqueSlice, key)
+	}
+	return uniqueSlice
+}
+
+func ArrUniqueInt(intSlice []int) []int {
+	uniqueMap := make(map[int]bool)
+	for _, item := range intSlice {
+		if item == 0 {
+			continue
+		}
+		uniqueMap[item] = true
+	}
+	uniqueSlice := make([]int, 0, len(uniqueMap))
+	for key := range uniqueMap {
+		uniqueSlice = append(uniqueSlice, key)
+	}
+	return intSlice
+}
+
+func ArrUnique64(intSlice []int64) []int64 {
+	uniqueMap := make(map[int64]bool)
+	for _, item := range intSlice {
+		if item == 0 {
+			continue
+		}
+		uniqueMap[item] = true
+	}
+	uniqueSlice := make([]int64, 0, len(uniqueMap))
+	for key := range uniqueMap {
+		uniqueSlice = append(uniqueSlice, key)
+	}
+	return intSlice
 }
 
 func UniqueId() string {
@@ -166,19 +259,12 @@ func DeletedAt() gorm.DeletedAt {
 	}
 }
 
-func BlankString(stringText string) bool {
-	if stringText == "" {
-		return true
-	}
-	count := 0
-	for _, v := range stringText {
-		if v == ' ' {
-			count++
-		} else {
-			break
-		}
-	}
-	if count > 0 {
+func BlankString(s string) bool {
+	// return true if whitespace
+	// - The string cannot be empty.
+	// - The string cannot contain only spaces.
+	// - The string cannot start with a space.
+	if s == "" || strings.TrimSpace(s) == "" || strings.HasPrefix(s, " ") {
 		return true
 	}
 	return false
