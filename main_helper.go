@@ -238,7 +238,7 @@ func DateNow(typeFormat int) string {
 		return dateNow.Format("2006-01-02")
 	}
 	if typeFormat == 2 { //time only
-		return timeNow.Format("15:43:5")
+		return timeNow.Format("15:04:05")
 	}
 	if typeFormat == 3 { //datetime
 		return dateNow.String()
