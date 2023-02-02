@@ -1,6 +1,7 @@
 package zhelper
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,48 +27,25 @@ var (
 	}
 )
 
-func Rs(c echo.Context, Ct map[string]interface{}) error {
-	var Return Response
-	empty := struct{}{}
-	if KeyExists(Ct, "status") {
-		Return.Status = Ct["status"].(int)
-	} else {
-		Return.Status = 200
+func Rs(c echo.Context, result Response) error {
+	if result.Status == 0 {
+		result.Status = 200
 	}
-	if KeyExists(Ct, "message") {
-		if Ct["message"] == "" {
-			Return.Message = http.StatusText(Return.Status)
-		} else {
-			Return.Message = Ct["message"].(string)
-		}
-	} else {
-		Return.Message = http.StatusText(Return.Status)
-	}
-
-	if KeyExists(Ct, "content") {
-		Return.Content = Ct["content"]
-	} else {
-		Return.Content = empty
-	}
-	if KeyExists(Ct, "other") {
-		Return.Others = Ct["other"]
-	} else {
-		Return.Others = empty
-	}
-	Return.Path = Substr(c.Request().RequestURI, 150)
-	return c.JSON(Return.Status, Return)
+	result.Message = http.StatusText(result.Status)
+	result.Path = Substr(c.Request().RequestURI, 150)
+	return c.JSON(result.Status, result)
 }
 
 func RsSuccess(c echo.Context) error {
-	return Rs(c, H{
-		"content": "success",
+	return Rs(c, Response{
+		Content: "success",
 	})
 }
 
 func RsError(c echo.Context, code int, message interface{}) error {
-	return Rs(c, H{
-		"status":  code,
-		"message": message,
+	return Rs(c, Response{
+		Status:  code,
+		Message: message.(string),
 	})
 }
 
@@ -386,3 +364,53 @@ func ToSnakeCase(camel string) string {
 }
 
 //end paginate helper
+
+func ParseJWT(c echo.Context) (map[string]interface{}, error) { //parse jwt token
+	tokenString := c.Request().Header.Get("Authorization")
+	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("cannot parse token")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, errors.New("cannot parse token")
+	}
+	var claims map[string]interface{}
+	sonic.Unmarshal(payload, &claims)
+	ch := make(chan map[string]interface{})
+	go flattenJSON(claims, "", ch)
+	flattenedData := <-ch
+	return flattenedData, nil
+}
+
+func flattenJSON(data map[string]interface{}, parentKey string, ch chan<- map[string]interface{}) {
+	// make a map to keep track of the keys that have been added
+	keys := make(map[string]bool)
+
+	for key, value := range data {
+		// construct the new key by concatenating the parent key and current key
+		newKey := parentKey + key
+
+		// check if the value is of type map[string]interface{}
+		if _, ok := value.(map[string]interface{}); ok {
+			// create a new channel for communicating with the nested function call
+			ch := make(chan map[string]interface{})
+			// recursively call the flattenJSON function for the nested map
+			go flattenJSON(value.(map[string]interface{}), newKey+".", ch)
+			flattenedData := <-ch
+
+			// iterate through the flattened data
+			for k, v := range flattenedData {
+				// check if the key already exists in the data map
+				if !KeyExists(data, k) {
+					data[k] = v
+					keys[k] = true
+				}
+			}
+			// remove the nested map from the data map
+			delete(data, key)
+		}
+	}
+	ch <- data
+}
