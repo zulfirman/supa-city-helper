@@ -31,7 +31,9 @@ func Rs(c echo.Context, result Response) error {
 	if result.Status == 0 {
 		result.Status = 200
 	}
-	result.Message = http.StatusText(result.Status)
+	if result.Message==""{
+		result.Message = http.StatusText(result.Status)
+	}
 	result.Path = Substr(c.Request().RequestURI, 150)
 	return c.JSON(result.Status, result)
 }
