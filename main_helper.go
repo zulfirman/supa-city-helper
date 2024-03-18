@@ -44,7 +44,7 @@ func RsSuccess(c echo.Context) error {
 	})
 }
 
-func RsError(c echo.Context, code int, message interface{}) error {
+func RsMessage(c echo.Context, code int, message interface{}) error {
 	return Rs(c, Response{
 		Status:  code,
 		Message: message.(string),
